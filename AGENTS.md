@@ -8,7 +8,11 @@
 
 - **実装ファイルはコミットしない**：リポジトリで追跡するのは `AGENTS.md` と `README.md` だけである。
   生成したファイルは、git なら `.git/info/exclude` に追加して追跡対象から外す。
-  jj なら `jj config set --repo snapshot.auto-track 'root-file:"AGENTS.md" | root-file:"README.md"'` を設定する。
+  jj なら、自動で追跡するファイルをこの 2 つに絞る（値は TOML の文字列として渡すので、外側を二重に引用する）。
+
+  ```bash
+  jj config set --repo snapshot.auto-track "'root-file:\"AGENTS.md\" | root-file:\"README.md\"'"
+  ```
 - **仕様の正はこのファイル**：実装の挙動を変えたら、このファイルも同じ変更で更新する。
 - **テストは一時ディレクトリだけを触る**：ユニットテストでも手動確認でも、シェルからホームディレクトリ全体をスキャンしない。
   数分かかるうえ、ターミナルに対してプライバシー保護（TCC）の許可ダイアログが次々に出る。
