@@ -11,7 +11,7 @@
 ## 実装のしかた
 
 このリポジトリには実装（Swift のソース、テスト、ビルドスクリプト）が入っていない。
-入っているのは、Aki を再現するための仕様 [AGENTS.md](AGENTS.md) とこの README だけである。
+入っているのは、Aki を再現するための仕様 [AGENTS.md](AGENTS.md)、この README、[LICENSE](LICENSE) だけである。
 各自の手元で、コーディングエージェントに AGENTS.md を読ませて実装させる。
 
 1. リポジトリを手元に置き、そのディレクトリでコーディングエージェント（Claude Code、Codex など）を起動する。
@@ -53,3 +53,7 @@ make test      # ユニットテスト
 build/Aki.app/Contents/MacOS/Aki --scan ~/some/dir   # UI を出さずに集計結果を出力
 build/Aki.app/Contents/MacOS/Aki --snapshot out.png Library   # キャッシュからポップオーバーを PNG に（~/Library を掘った状態）
 ```
+
+## ライセンス
+
+MIT ライセンス。詳しくは [LICENSE](LICENSE) を参照。
