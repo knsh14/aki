@@ -7,7 +7,7 @@ A macOS app that shows free storage space in the menu bar. Click it to see a rou
   - Click a folder to open it, or a file to show it in Finder. Right-click to copy the path
 - Launch at login: on the first launch from `/Applications` or `~/Applications`, the app registers itself as a login item. You can toggle this with the checkbox in the popover (copies launched from `build/` are not registered)
 - Scan results are cached in `~/Library/Caches/dev.aki.Aki/scan.json`. On launch, the app rescans if the last scan is more than an hour old
-- The UI is in Japanese
+- The UI follows the system language: Japanese or English (English for any other language). To change it for Aki only, use System Settings > General > Language & Region > Applications
 
 ## How to implement
 
@@ -38,7 +38,7 @@ make test      # run the unit tests
 ## Permissions
 
 - On the first scan, macOS asks for access to Desktop, Documents, Downloads, and data from other apps.
-- Folders such as `~/Library/Mail` cannot be read without Full Disk Access, so their sizes are shown smaller. Open the settings pane with the "フルディスクアクセス…" (Full Disk Access…) button in the popover and allow Aki.
+- Folders such as `~/Library/Mail` cannot be read without Full Disk Access, so their sizes are shown smaller. Open the settings pane with the "Full Disk Access…" button in the popover and allow Aki.
 - Because the app is ad-hoc signed, **rebuilding it changes the app's identity, and you have to grant the permissions again**. Once you have run `make install`, avoid rebuilding.
 
 ## What the numbers mean

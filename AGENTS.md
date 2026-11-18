@@ -29,7 +29,8 @@ The app is read-only and has no delete feature.
 - **Bundle ID**: `dev.aki.Aki`
 - **Supported OS**: macOS 14 or later (required for `@Observable`)
 - **Language and tools**: Swift 6 (swift-tools-version 6.0), SwiftPM, SwiftUI, Swift Testing. No external dependencies. Do not create an Xcode project.
-- **UI text**: all in Japanese. Use the Japanese strings in this spec verbatim and do not translate them. English in parentheses after a string is only a gloss for readers and does not appear in the UI.
+- **UI text**: follows the system language. Japanese when Japanese ranks above English in the user's preferred languages, English otherwise (English is also the fallback for every other language).
+  The code uses the English strings as localization keys. Use the strings in this spec and the translations in "Localization" verbatim.
 
 ## File layout
 
@@ -45,6 +46,8 @@ Sources/Aki/PopoverView.swift      popover UI
 Sources/Aki/Snapshot.swift         development only: renders the popover to a PNG
 Tests/AkiCoreTests/ScannerTests.swift
 Tests/AkiCoreTests/BreakdownTests.swift
+Localization/en.lproj/Localizable.strings   English UI strings (each key maps to itself)
+Localization/ja.lproj/Localizable.strings   Japanese UI strings
 scripts/build-app.sh               assembles the .app and ad-hoc signs it
 Makefile
 .gitignore                         .build/ build/ .swiftpm/ (local only; do not commit)
@@ -230,7 +233,8 @@ private static func usedBytes(of path: String) -> Int64 {
   The initializer is `public init(apps:home:system:other:free:)`.
   `static func make(volume: VolumeStats, home: Int64?, apps: Int64?) -> Breakdown` treats `nil` as 0 and sets `other = max(0, used - home - apps - system)` and `free = available`.
   Even when the sum exceeds the used space (during a scan or because of missing permissions), Other never goes below 0.
-- **`public func formatBytes(_ bytes: Int64) -> String`**: `ByteCountFormatter.string(fromByteCount:countStyle: .file)` (decimal units).
+- **`public func formatBytes(_ bytes: Int64) -> String`**: create a `ByteCountFormatter` on each call, set `countStyle = .file` (decimal units) and `allowsNonnumericFormatting = false`, and return `string(fromByteCount:)`.
+  Without the latter, 0 is written as "Zero KB" in English. `ByteCountFormatter` is not `Sendable`, so do not keep it in a global.
 
 ## Aki (the app)
 
@@ -311,11 +315,11 @@ Reset `stack` to empty with `onChange(of: model.home?.scannedAt) { stack = [] }`
 #### Capacity and breakdown
 
 When `volume` and `breakdown` exist, lay out the following in a `VStack(alignment: .leading, spacing: 8)`.
-Otherwise, show only `Text("容量を取得できませんでした")` (Could not get the capacity; secondary).
+Otherwise, show only `Text("Couldn't get the disk capacity")` (secondary).
 
 1. `HStack(alignment: .firstTextBaseline)`:
-   On the left, `"空き \(formatBytes(available))"` (Free …) in `.title2.bold()` (red if `isLow`, otherwise primary).
-   Then a `Spacer()`, and on the right, `"\(formatBytes(total)) 中 \(percent)% 使用"` (percent used of total) in `.caption`, secondary.
+   On the left, `"\(formatBytes(available)) free"` in `.title2.bold()` (red if `isLow`, otherwise primary).
+   Then a `Spacer()`, and on the right, `"\(percent)% of \(formatBytes(total)) used"` in `.caption`, secondary.
    `percent` is `Int((Double(used) / Double(max(total, 1)) * 100).rounded())`. Dividing as Int64 always gives 0%, so always compute in Double.
 2. The usage bar (height 10).
 3. The legend: a `LazyVGrid` (two columns, `GridItem(.flexible(), spacing: 16)` and `GridItem(.flexible())`, leading alignment, row spacing 4).
@@ -323,15 +327,16 @@ Otherwise, show only `Text("容量を取得できませんでした")` (Could no
    If the value is `nil`, show `"…"`.
 
 The breakdown items, in this order, are below.
-The values of アプリ, ホーム, and その他 are `nil` while there is no home scan result yet.
+The values of Apps, Home, and Other are `nil` while there is no home scan result yet.
+The labels are kept as `String`s, so create them with `String(localized:)`.
 
-| Label | Meaning | Value | Color |
-| --- | --- | --- | --- |
-| アプリ | Apps | `apps` | `.blue` |
-| ホーム | Home | `home` | `.orange` |
-| システム | System | `system` | `.gray` |
-| その他 | Other | `other` | `.purple` |
-| 空き | Free | `free` | `Color.primary.opacity(0.12)` |
+| Label | Value | Color |
+| --- | --- | --- |
+| Apps | `apps` | `.blue` |
+| Home | `home` | `.orange` |
+| System | `system` | `.gray` |
+| Other | `other` | `.purple` |
+| Free | `free` | `Color.primary.opacity(0.12)` |
 
 The usage bar takes `parts: [(Double, Color)]` (each item's value as a Double and its color; `nil` counts as 0).
 Inside a `GeometryReader`, place a `Rectangle` in each item's color in an `HStack(spacing: 1)`, with width `max(0, geo.size.width * value / sum - 1)`, and clip the whole bar with a `Capsule`.
@@ -342,15 +347,15 @@ Inside a `GeometryReader`, place a `Rectangle` in each item's color in an `HStac
 Use a `VStack(alignment: .leading, spacing: 6)`.
 
 The header row is an `HStack(spacing: 6)` containing:
-- If `stack` is not empty, a `chevron.left` back button (`.borderless`, help `戻る` (Back)). Pressing it removes the last element of `stack`.
-- The heading text (`.headline`, one line, truncated at the head): `ホームの大きいフォルダ` (Large folders in Home) if `stack` is empty, otherwise `current.path` in `~` notation.
+- If `stack` is not empty, a `chevron.left` back button (`.borderless`, help `Back`). Pressing it removes the last element of `stack`.
+- The heading text (`.headline`, one line, truncated at the head): `String(localized: "Large folders in Home")` if `stack` is empty, otherwise `current.path` in `~` notation.
 - `Spacer()`.
-- If `current` exists, a `folder` icon button (`.borderless`, help `Finderで表示` (Show in Finder)). Pressing it reveals `current` in Finder.
+- If `current` exists, a `folder` icon button (`.borderless`, help `Show in Finder`). Pressing it reveals `current` in Finder.
 
 If `current` exists, list the first 20 of its `children` as `NodeRow`s.
 If `current.size` minus the sum of the sizes of the 20 rows shown is positive, append a `RestRow`.
 Put the rows in a `VStack(spacing: 0)` inside a `ScrollView`, and set the `ScrollView`'s height to `min(max(row count, 1) * 30, 330)`.
-If there is no `current`, show `初回スキャン中です。数分かかることがあります。` (Running the first scan. It can take a few minutes.) while scanning, or `まだスキャンしていません` (Not scanned yet) otherwise, in `.callout`, secondary.
+If there is no `current`, show `Running the first scan. This can take a few minutes.` while scanning, or `Not scanned yet` otherwise, in `.callout`, secondary.
 
 **`NodeRow`** (takes `node`, `parentSize`, and `onOpen`) is an `HStack(spacing: 8)` containing:
 - The icon (width 16): `folder.fill` for a folder, `doc.fill` for a file. The color is `node.isDirectory ? Color.accentColor : Color.secondary`.
@@ -361,11 +366,11 @@ If there is no `current`, show `初回スキャン中です。数分かかるこ
 Rows have a horizontal padding of 6 and a height of 30.
 While a row is hovered, draw `Color.primary.opacity(0.08)` with a corner radius of 6 as its background, and make the whole row clickable with `contentShape(Rectangle())`.
 Clicking an openable row (a folder whose `children` is not empty) calls `onOpen` (which pushes it onto `stack`); clicking any other row reveals it in Finder.
-The help text is `クリックで中を表示` (Click to show contents) for openable rows and `クリックで Finder に表示` (Click to show in Finder) for the others.
-The context menu has `Finderで表示` (Show in Finder) and `パスをコピー` (Copy path).
-`パスをコピー` calls `clearContents()` on `NSPasteboard.general` and then `setString(path, forType: .string)`.
+The help text is `Click to show contents` for openable rows and `Click to show in Finder` for the others. It is chosen with a ternary, so create both with `String(localized:)`.
+The context menu has `Show in Finder` and `Copy Path`.
+`Copy Path` calls `clearContents()` on `NSPasteboard.general` and then `setString(path, forType: .string)`.
 
-**`RestRow`** (takes `size` and `parentSize`) has the same layout as `NodeRow`, with the icon `ellipsis.circle` (secondary) and the name `その他（小さい項目）` (Other (small items); secondary).
+**`RestRow`** (takes `size` and `parentSize`) has the same layout as `NodeRow`, with the icon `ellipsis.circle` (secondary) and the name `Other (small items)` (secondary).
 Place the chevron with opacity 0.
 It has no hover highlight and no click action.
 
@@ -378,18 +383,61 @@ To reveal an item in Finder, use `NSWorkspace.shared.activateFileViewerSelecting
 
 A `VStack(alignment: .leading, spacing: 8)` containing, from top to bottom:
 
-1. While scanning, an `HStack(spacing: 6)` with `ProgressView().controlSize(.small)` and `"スキャン中… \(formatBytes(progressBytes))"` (Scanning…; `monospacedDigit`), in `.caption`.
+1. While scanning, an `HStack(spacing: 6)` with `ProgressView().controlSize(.small)` and `"Scanning… \(formatBytes(progressBytes))"` (`monospacedDigit`), in `.caption`.
    Below it, `progressPath` in `~` notation (`.caption2`, secondary, one line, truncated in the middle).
-   When not scanning and `home` exists, show `"最終スキャン: \(scannedAt.formatted(date: .abbreviated, time: .shortened))"` (Last scan; `.caption`, secondary).
-2. If `unreadableCount > 0`, an `HStack(spacing: 6)` with `lock.fill` (secondary), `"読めないフォルダ \(count) 件（その分小さく表示）"` (N unreadable folders; sizes are shown smaller by that amount), `Spacer()`, and a link-style button `フルディスクアクセス…` (Full Disk Access…), in `.caption`.
+   When not scanning and `home` exists, show `"Last scan: \(scannedAt.formatted(date: .abbreviated, time: .shortened))"` (`.caption`, secondary).
+2. If `unreadableCount > 0`, an `HStack(spacing: 6)` with `lock.fill` (secondary), `"Unreadable folders: \(count) (not counted)"`, `Spacer()`, and a link-style button `Full Disk Access…`, in `.caption`.
    The button opens the URL above with `NSWorkspace.shared.open`.
-3. If `loginItemNeedsApproval`, an `HStack(spacing: 6)` with `exclamationmark.circle` (orange), `ログイン時の起動にはシステム設定での許可が必要です` (Launch at login needs approval in System Settings), `Spacer()`, and a link-style button `開く` (Open), in `.caption`.
+3. If `loginItemNeedsApproval`, an `HStack(spacing: 6)` with `exclamationmark.circle` (orange), `Launch at login needs approval in System Settings`, `Spacer()`, and a link-style button `Open`, in `.caption`.
    The button calls `SMAppService.openSystemSettingsLoginItems()`.
 4. The bottom `HStack`:
-   - A `再スキャン` (Rescan) button (disabled while scanning).
-   - A `.checkbox`-style Toggle `ログイン時に起動` (Launch at login; `.caption`). Its getter is `launchAtLogin` and its setter is `setLaunchAtLogin(_:)`.
+   - A `Rescan` button (disabled while scanning).
+   - A `.checkbox`-style Toggle `Launch at login` (`.caption`). Its getter is `launchAtLogin` and its setter is `setLaunchAtLogin(_:)`.
    - `Spacer()`.
-   - A `終了` (Quit) button (`NSApp.terminate(nil)`).
+   - A `Quit` button (`NSApp.terminate(nil)`).
+
+### Localization
+
+SwiftUI looks up `Text`, `Button`, `Toggle`, and `.help` string literals as `LocalizedStringKey`s in the `Localizable` table of `Bundle.main`, and `String(localized:)` does the same.
+Do not use SwiftPM resources or `Bundle.module`: SwiftPM would put the strings in an `Aki_Aki.bundle`, which `Bundle.main` does not search, and its accessor looks for that bundle at the root of the `.app`, which breaks code signing.
+Instead, keep the `.strings` files in `Localization/` at the repository root (outside `Sources/`, so SwiftPM does not warn about unhandled files), and have `build-app.sh` copy them into `Contents/Resources/`.
+
+- `Text` with a `String` variable is shown verbatim. File names, paths, and sizes go through this form and are not translated.
+  Labels kept in variables or chosen with a ternary must be created with `String(localized:)`, or they stay in English.
+- A key with interpolation replaces each `String` with `%@` and each `Int` with `%lld`, and escapes a literal `%` as `%%`.
+  Where Japanese word order differs, the Japanese value uses positional specifiers (`%1$lld`, `%2$@`).
+- Each file is UTF-8 with one `"key" = "value";` per line, in the order of the table below.
+  In `en.lproj`, each value equals its key.
+  Ship `en.lproj` even though it changes nothing, so that both languages are available localizations of the bundle.
+
+| Key (English) | Japanese |
+| --- | --- |
+| `Apps` | `アプリ` |
+| `Home` | `ホーム` |
+| `System` | `システム` |
+| `Other` | `その他` |
+| `Free` | `空き` |
+| `%@ free` | `空き %@` |
+| `%lld%% of %@ used` | `%2$@ 中 %1$lld%% 使用` |
+| `Couldn't get the disk capacity` | `容量を取得できませんでした` |
+| `Back` | `戻る` |
+| `Large folders in Home` | `ホームの大きいフォルダ` |
+| `Show in Finder` | `Finderで表示` |
+| `Running the first scan. This can take a few minutes.` | `初回スキャン中です。数分かかることがあります。` |
+| `Not scanned yet` | `まだスキャンしていません` |
+| `Click to show contents` | `クリックで中を表示` |
+| `Click to show in Finder` | `クリックで Finder に表示` |
+| `Copy Path` | `パスをコピー` |
+| `Other (small items)` | `その他（小さい項目）` |
+| `Scanning… %@` | `スキャン中… %@` |
+| `Last scan: %@` | `最終スキャン: %@` |
+| `Unreadable folders: %lld (not counted)` | `読めないフォルダ %lld 件（その分小さく表示）` |
+| `Full Disk Access…` | `フルディスクアクセス…` |
+| `Launch at login needs approval in System Settings` | `ログイン時の起動にはシステム設定での許可が必要です` |
+| `Open` | `開く` |
+| `Rescan` | `再スキャン` |
+| `Launch at login` | `ログイン時に起動` |
+| `Quit` | `終了` |
 
 ### Development snapshot (Snapshot.swift)
 
@@ -407,8 +455,9 @@ It is for checking the look in environments where the menu bar cannot be capture
 
 `scripts/build-app.sh` (bash, `set -euo pipefail`, `cd` to the repository root) does the following.
 
-1. Run `swift build -c release` and take `Aki` from the directory printed by `swift build -c release --show-bin-path`.
-2. Delete and recreate `build/Aki.app`, put the executable at `Contents/MacOS/Aki` and the content below at `Contents/Info.plist`, and also create `Contents/Resources`.
+1. Check both `Localizable.strings` files with `plutil -lint -s Localization/*.lproj/Localizable.strings`.
+   Then run `swift build -c release` and take `Aki` from the directory printed by `swift build -c release --show-bin-path`.
+2. Delete and recreate `build/Aki.app`, put the executable at `Contents/MacOS/Aki` and the content below at `Contents/Info.plist`, create `Contents/Resources`, and copy `Localization/*.lproj` into it with `cp -R`.
 3. Ad-hoc sign the bundle with `codesign --force --sign - build/Aki.app`.
    The linker has already ad-hoc signed the binary, so `replacing existing signature` in the output is expected.
 
@@ -420,6 +469,8 @@ Make the script executable (`chmod +x scripts/build-app.sh`).
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key><string>dev.aki.Aki</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array><string>en</string><string>ja</string></array>
     <key>CFBundleName</key><string>Aki</string>
     <key>CFBundleDisplayName</key><string>Aki</string>
     <key>CFBundleExecutable</key><string>Aki</string>
@@ -434,6 +485,7 @@ Make the script executable (`chmod +x scripts/build-app.sh`).
 ```
 
 `LSUIElement` is true so that no icon appears in the Dock.
+`CFBundleDevelopmentRegion` is `en` so that languages other than Japanese and English fall back to English.
 
 The `Makefile` targets are:
 
@@ -483,6 +535,11 @@ The `fts` path is checked by the comparison with `du` in the next section.
    For reference, in the author's environment, scanning `~/go` took about 10–13 seconds (`du` took about 31 seconds), and scanning the whole home directory took about 4 minutes.
 4. Once the app has been launched and a cache exists, `Aki --snapshot out.png` or `Aki --snapshot out.png Library` renders the popover to a PNG for checking its look.
    Launch the app only with the user's consent.
+5. Render the snapshot in each language with `Aki -AppleLanguages '(en)' --snapshot out.png`, and likewise with `(ja)` and `(fr)`.
+   `-AppleLanguages` goes before `--snapshot`, because the argument after `<out.png>` is taken as the drill path.
+   The `en` and `fr` images contain no Japanese, and the `ja` image contains no English UI text (a key that is missing from `ja.lproj` shows up in English).
+   Also render a drilled-in snapshot (`... --snapshot out.png Library`) to cover `RestRow`.
+   Tooltips and context menus do not appear in snapshots, so check that their keys are in the table above.
 
 ## Permissions and ad-hoc signing
 
