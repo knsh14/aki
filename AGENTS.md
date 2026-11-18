@@ -1,57 +1,57 @@
-# Aki（あき）実装仕様
+# Aki (あき) Implementation Spec
 
-このリポジトリには実装（Swift のソース、テスト、ビルドスクリプト）を含めない。
-このファイルは、コーディングエージェントが手元で Aki を一から実装し、作者の手元にある実装と同じ挙動を再現するための仕様である。
-利用者向けの説明は README.md にある。
+This repository does not contain the implementation (Swift sources, tests, or build scripts).
+This file is a specification that lets a coding agent implement Aki from scratch on a local machine and reproduce the behavior of the author's local implementation.
+User-facing documentation is in README.md.
 
-## エージェントの作業ルール
+## Rules for agents
 
-- **実装ファイルはコミットしない**：リポジトリで追跡するのは `AGENTS.md`、`README.md`、`LICENSE` だけである。
-  生成したファイルは、git なら `.git/info/exclude` に追加して追跡対象から外す。
-  jj なら、自動で追跡するファイルをこの 3 つに絞る（値は TOML の文字列として渡すので、外側を二重に引用する）。
+- **Do not commit implementation files**: the repository tracks only `AGENTS.md`, `README.md`, and `LICENSE`.
+  With git, add the generated files to `.git/info/exclude` so they stay untracked.
+  With jj, limit auto-tracked files to these three (the value is parsed as a TOML string, so it needs an extra layer of quoting).
 
   ```bash
   jj config set --repo snapshot.auto-track "'root-file:\"AGENTS.md\" | root-file:\"README.md\" | root-file:\"LICENSE\"'"
   ```
-- **仕様の正はこのファイル**：実装の挙動を変えたら、このファイルも同じ変更で更新する。
-- **テストは一時ディレクトリだけを触る**：ユニットテストでも手動確認でも、シェルからホームディレクトリ全体をスキャンしない。
-  数分かかるうえ、ターミナルに対してプライバシー保護（TCC）の許可ダイアログが次々に出る。
-- **インストールと起動はユーザーの了承を得てから行う**：`~/Applications` などから初めて起動するとログイン項目に登録されるので、`make install` や `make run`、アプリの起動はユーザーに確認してから行う。
+- **This file is the source of truth**: when you change the implementation's behavior, update this file in the same change.
+- **Tests touch only temporary directories**: neither unit tests nor manual checks scan the whole home directory from the shell.
+  It takes minutes, and macOS privacy protection (TCC) shows the terminal one permission dialog after another.
+- **Ask the user before installing or launching**: the first launch from `~/Applications` or a similar location registers a login item, so confirm with the user before running `make install` or `make run`, or launching the app.
 
-## 何を作るか
+## What to build
 
-macOS のメニューバーにストレージの空き容量を表示するアプリを作る。
-クリックするとポップオーバーが開き、使用量の大まかな内訳と、ホーム以下の大きいフォルダやファイルが表示される。
-フォルダは階層をたどって掘り下げられ、Finder で表示できる。
-閲覧専用で、削除機能は持たない。
+A macOS app that shows free storage space in the menu bar.
+Clicking it opens a popover with a rough breakdown of used space and the large folders and files under the home directory.
+Folders can be drilled into level by level and revealed in Finder.
+The app is read-only and has no delete feature.
 
-- **アプリ名**：Aki（あき）
-- **Bundle ID**：`dev.aki.Aki`
-- **対応 OS**：macOS 14 以降（`@Observable` を使うため）
-- **言語とツール**：Swift 6（swift-tools-version 6.0）、SwiftPM、SwiftUI、Swift Testing。外部依存は使わない。Xcode プロジェクトは作らない。
-- **UI 文言**：すべて日本語。以下に書く文字列をそのまま使う。
+- **App name**: Aki (あき)
+- **Bundle ID**: `dev.aki.Aki`
+- **Supported OS**: macOS 14 or later (required for `@Observable`)
+- **Language and tools**: Swift 6 (swift-tools-version 6.0), SwiftPM, SwiftUI, Swift Testing. No external dependencies. Do not create an Xcode project.
+- **UI text**: all in Japanese. Use the Japanese strings in this spec verbatim and do not translate them. English in parentheses after a string is only a gloss for readers and does not appear in the UI.
 
-## ファイル構成
+## File layout
 
 ```
 Package.swift
 Sources/AkiCore/SizeNode.swift     SizeNode, ScanResult, ScanProgress
-Sources/AkiCore/Scanner.swift      ディレクトリ走査
+Sources/AkiCore/Scanner.swift      directory traversal
 Sources/AkiCore/Volume.swift       VolumeStats, Breakdown, formatBytes
-Sources/Aki/main.swift             エントリポイント（隠し CLI を含む）
+Sources/Aki/main.swift             entry point (including the hidden CLI)
 Sources/Aki/App.swift              MenuBarExtra
-Sources/Aki/AppModel.swift         状態、スキャン、キャッシュ、ログイン項目
-Sources/Aki/PopoverView.swift      ポップオーバーの UI
-Sources/Aki/Snapshot.swift         開発用：ポップオーバーを PNG に書き出す
+Sources/Aki/AppModel.swift         state, scanning, cache, login item
+Sources/Aki/PopoverView.swift      popover UI
+Sources/Aki/Snapshot.swift         development only: renders the popover to a PNG
 Tests/AkiCoreTests/ScannerTests.swift
 Tests/AkiCoreTests/BreakdownTests.swift
-scripts/build-app.sh               .app を組み立てて ad-hoc 署名する
+scripts/build-app.sh               assembles the .app and ad-hoc signs it
 Makefile
-.gitignore                         .build/ build/ .swiftpm/（ローカルのみ。コミットしない）
+.gitignore                         .build/ build/ .swiftpm/ (local only; do not commit)
 ```
 
-`AkiCore` はテスト対象のライブラリで、UI を持たない。
-`Aki` は実行ファイルで、`AkiCore` に依存する。
+`AkiCore` is the library under test and has no UI.
+`Aki` is the executable and depends on `AkiCore`.
 
 ```swift
 // swift-tools-version: 6.0
@@ -70,41 +70,41 @@ let package = Package(
 
 ## AkiCore
 
-`Aki` は別モジュールなので、AkiCore の型、プロパティ、イニシャライザ、関数は、以下で internal や private と書いたもの以外すべて `public` にする。
-public な struct でもメンバーごとのイニシャライザは internal になるので、struct のイニシャライザは `public init` を明示的に書く。
-各ファイルの import は次のとおり。
+Because `Aki` is a separate module, make every type, property, initializer, and function in AkiCore `public`, except those described below as internal or private.
+A public struct's memberwise initializer is still internal, so write an explicit `public init` for each struct.
+The imports for each file are:
 
-- **SizeNode.swift**：`Foundation`、`os`（`OSAllocatedUnfairLock`）
-- **Scanner.swift**：`Darwin`、`Foundation`、`os`
-- **Volume.swift**：`Darwin`、`Foundation`
-- **main.swift**：`Foundation`、`AkiCore`
-- **App.swift**：`SwiftUI`、`AkiCore`
-- **AppModel.swift**：`Foundation`、`Observation`、`os`（`Logger`）、`ServiceManagement`、`AkiCore`
-- **PopoverView.swift**：`AppKit`、`ServiceManagement`（`openSystemSettingsLoginItems()`）、`SwiftUI`、`AkiCore`
-- **Snapshot.swift**：`AppKit`、`AkiCore`、`SwiftUI`
+- **SizeNode.swift**: `Foundation`, `os` (`OSAllocatedUnfairLock`)
+- **Scanner.swift**: `Darwin`, `Foundation`, `os`
+- **Volume.swift**: `Darwin`, `Foundation`
+- **main.swift**: `Foundation`, `AkiCore`
+- **App.swift**: `SwiftUI`, `AkiCore`
+- **AppModel.swift**: `Foundation`, `Observation`, `os` (`Logger`), `ServiceManagement`, `AkiCore`
+- **PopoverView.swift**: `AppKit`, `ServiceManagement` (`openSystemSettingsLoginItems()`), `SwiftUI`, `AkiCore`
+- **Snapshot.swift**: `AppKit`, `AkiCore`, `SwiftUI`
 
-`public enum Scanner` は `Foundation.Scanner` と同じ名前だが、Swift 6.4 では自モジュールの型が優先されるため、`AkiCore.` を付けずに参照できる。
+`public enum Scanner` has the same name as `Foundation.Scanner`, but in Swift 6.4 the type declared in the current module takes precedence, so it can be referenced without the `AkiCore.` prefix.
 
-### データ型（SizeNode.swift）
+### Data types (SizeNode.swift)
 
-- **`SizeNode`**：`Codable, Sendable, Identifiable, Hashable` の struct。
-  プロパティは `name: String`、`path: String`（絶対パス）、`size: Int64`、`isDirectory: Bool`、`children: [SizeNode]` で、すべて `var` にする。
-  `id` は `path` を返す。
-  `children` はサイズの降順に並べる。
-  イニシャライザは `init(name:path:size:isDirectory:children: = [])`。
-- **`ScanResult`**：`Codable, Sendable` の struct。
-  `root: SizeNode`、`unreadableCount: Int`（権限不足などで中を読めなかったディレクトリ数）、`scannedAt: Date` を持ち、すべて `var` にする。
-  イニシャライザは `public init(root:unreadableCount:scannedAt:)`。
-- **`ScanProgress`**：`final class` で `Sendable` に準拠させる。
-  内部状態（`bytes: Int64`、`currentPath: String`）を、private な struct にまとめて `OSAllocatedUnfairLock(initialState:)` で守る。
-  イニシャライザは引数なしの `public init()`。
-  読み取り用に、ロックを取って値を返す計算プロパティ `public var bytes: Int64` と `public var currentPath: String` を公開する。
-  書き込み用の `func add(_ bytes: Int64)`（0 なら何もしない）と `func setPath(_:)` は internal にする。
-  スキャンのスレッドから書き、UI のスレッドから読む。
+- **`SizeNode`**: a struct conforming to `Codable, Sendable, Identifiable, Hashable`.
+  Its properties are `name: String`, `path: String` (an absolute path), `size: Int64`, `isDirectory: Bool`, and `children: [SizeNode]`, all `var`.
+  `id` returns `path`.
+  `children` is sorted by size in descending order.
+  The initializer is `init(name:path:size:isDirectory:children: = [])`.
+- **`ScanResult`**: a struct conforming to `Codable, Sendable`.
+  It has `root: SizeNode`, `unreadableCount: Int` (the number of directories whose contents could not be read, for example because of missing permissions), and `scannedAt: Date`, all `var`.
+  The initializer is `public init(root:unreadableCount:scannedAt:)`.
+- **`ScanProgress`**: a `final class` conforming to `Sendable`.
+  Group its internal state (`bytes: Int64`, `currentPath: String`) into a private struct and protect it with `OSAllocatedUnfairLock(initialState:)`.
+  The initializer is a parameterless `public init()`.
+  For reading, expose the computed properties `public var bytes: Int64` and `public var currentPath: String`, which take the lock and return the value.
+  The writers `func add(_ bytes: Int64)` (does nothing for 0) and `func setPath(_:)` are internal.
+  The scan threads write to it and the UI thread reads from it.
 
-### 走査（Scanner.swift）
+### Traversal (Scanner.swift)
 
-`public enum Scanner` に次の API を置く。
+Put the following API on `public enum Scanner`.
 
 ```swift
 public static func disableDatalessMaterialization()
@@ -114,8 +114,8 @@ public static func scanSync(_ path: String, threshold: Int64 = 50_000_000,
                             progress: ScanProgress? = nil) -> ScanResult
 ```
 
-`disableDatalessMaterialization()` は、iCloud Drive などで未ダウンロードのファイル（dataless）を読んだときにダウンロードが走らないよう、プロセス全体のポリシーを設定する。
-起動直後に一度だけ呼ぶ。
+`disableDatalessMaterialization()` sets a process-wide policy so that reading files that have not been downloaded (dataless files, for example in iCloud Drive) does not trigger a download.
+Call it once, right after launch.
 
 ```swift
 _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES,
@@ -123,53 +123,53 @@ _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES,
                    IOPOL_MATERIALIZE_DATALESS_FILES_OFF)
 ```
 
-`scan` は `DispatchQueue.global(qos: .utility)` で `scanSync` を実行し、`withCheckedContinuation` で async に橋渡しする。
-`scanSync` は共有コンテキストを作って走査し、`ScanResult(root:unreadableCount:scannedAt: Date())` を返す。
+`scan` runs `scanSync` on `DispatchQueue.global(qos: .utility)` and bridges it to async with `withCheckedContinuation`.
+`scanSync` creates a shared context, traverses the tree, and returns `ScanResult(root:unreadableCount:scannedAt: Date())`.
 
-#### サイズの数え方
+#### Counting sizes
 
-- サイズは割り当て済みのブロック数で数える（`Int64(st.st_blocks) * 512`）。`du` と同じ基準である。
-- 通常ファイル（`S_IFREG`）で `st_nlink > 1` のものは、`(st_dev, st_ino)` の組を共有の `Set` に記録し、2 回目以降は 0 として数える（ハードリンクの重複排除）。
-  この `Set` は並列に触られるので `OSAllocatedUnfairLock` で守る。
-- ディレクトリ以外（通常ファイル、シンボリックリンクなど）はすべてファイルとして数える。シンボリックリンクはたどらない。
-- 読めないディレクトリの数も共有コンテキストにロック付きで数える。
-- 共有コンテキストは `private final class Context: Sendable` にする。
-  `threshold`、`progress`、`OSAllocatedUnfairLock<Set<InodeKey>>`（`InodeKey` は `dev: Int32` と `ino: UInt64` を持つ Hashable な struct）、`OSAllocatedUnfairLock<Int>`（unreadable の数）を持つ。
-  `scanSync` の呼び出しごとに 1 つ作るので、ハードリンクの重複排除は 1 回のスキャンの中でだけ効く。
-- `SF_DATALESS` は Int32 として、`st_flags` は UInt32 として取り込まれるので、`st.st_flags & UInt32(SF_DATALESS)` で比べる。
-- パスの連結には `(path as NSString).appendingPathComponent(_:)` を、名前の取り出しには `lastPathComponent` を使う。
+- Count sizes by allocated blocks (`Int64(st.st_blocks) * 512`), the same basis as `du`.
+- For regular files (`S_IFREG`) with `st_nlink > 1`, record the `(st_dev, st_ino)` pair in a shared `Set` and count every occurrence after the first as 0 (hard-link deduplication).
+  The `Set` is accessed concurrently, so protect it with `OSAllocatedUnfairLock`.
+- Count everything that is not a directory (regular files, symbolic links, and so on) as a file. Do not follow symbolic links.
+- Also count unreadable directories in the shared context, under a lock.
+- The shared context is a `private final class Context: Sendable`.
+  It holds `threshold`, `progress`, an `OSAllocatedUnfairLock<Set<InodeKey>>` (`InodeKey` is a Hashable struct with `dev: Int32` and `ino: UInt64`), and an `OSAllocatedUnfairLock<Int>` (the unreadable count).
+  One is created per `scanSync` call, so hard-link deduplication applies only within a single scan.
+- `SF_DATALESS` is imported as Int32 and `st_flags` as UInt32, so compare with `st.st_flags & UInt32(SF_DATALESS)`.
+- Join paths with `(path as NSString).appendingPathComponent(_:)` and extract names with `lastPathComponent`.
 
-#### 閾値による枝刈り
+#### Pruning by threshold
 
-`threshold`（既定 50,000,000 バイト）以上のフォルダとファイルだけを `SizeNode` として残す。
-それ未満の項目はノードにせず、サイズだけを親に合算する。
-したがって、どのノードでも `size` は配下の全項目の合計であり、`children` のサイズの和より大きくなりうる。
-スキャンの起点（root）は大きさにかかわらず常にノードとして返す。
+Keep only folders and files at or above `threshold` (default 50,000,000 bytes) as `SizeNode`s.
+Smaller items do not become nodes; only their sizes are added to the parent.
+So every node's `size` is the total of everything under it and can be larger than the sum of its `children`'s sizes.
+The scan's starting point (root) is always returned as a node, regardless of its size.
 
-#### 走査の手順
+#### Traversal steps
 
-上位の階層は自前で列挙して並列化し、深い階層は `fts` で 1 スレッドずつたどる。
-並列化する深さは `splitDepth = 4` とする。
+Enumerate the upper levels directly and in parallel, and walk the deeper levels with `fts`, one thread per subtree.
+The parallelization depth is `splitDepth = 4`.
 
-1. **起点**：`lstat` に失敗したら `size: 0` のディレクトリノードを返す（unreadable には数えない）。
-   起点がディレクトリでなければ、そのファイル 1 つのノードを返し、そのサイズを progress に加える。
-   ディレクトリなら、起点の `st_dev` を持って `scanDir(path, dev, depth: splitDepth)` に進む。
-2. **`scanDir(path, dev, depth)`**：`FileManager.default.contentsOfDirectory(atPath:)` で直下を列挙する。
-   列挙に失敗したら unreadable を 1 増やし、`size: 0` のディレクトリノードを返す。
-   各エントリを `lstat` し（失敗したエントリは無視する）、次のように振り分ける。
-   - ディレクトリのうち、`st_dev` が起点と異なるもの（別ボリュームのマウントポイント）と、`st_flags` に `SF_DATALESS` が立っているもの（未ダウンロード）は、たどらずに捨てる。
-   - それ以外のディレクトリは、後で並列に処理する一覧に入れる。
-   - ファイルはサイズを数えて合計し、閾値以上なら `isDirectory: false` のノードにする。
+1. **Starting point**: if `lstat` fails, return a directory node with `size: 0` (not counted as unreadable).
+   If the starting point is not a directory, return a single node for that file and add its size to progress.
+   If it is a directory, take its `st_dev` and proceed to `scanDir(path, dev, depth: splitDepth)`.
+2. **`scanDir(path, dev, depth)`**: list the direct entries with `FileManager.default.contentsOfDirectory(atPath:)`.
+   If listing fails, increment unreadable by 1 and return a directory node with `size: 0`.
+   `lstat` each entry (ignore entries for which it fails) and sort them as follows.
+   - Discard, without descending into them, directories whose `st_dev` differs from the starting point's (mount points of other volumes) and directories with `SF_DATALESS` set in `st_flags` (not downloaded).
+   - Put the other directories in a list to be processed in parallel later.
+   - Count and sum the sizes of files; a file at or above the threshold becomes a node with `isDirectory: false`.
 
-   ファイルの合計は列挙が終わった時点でまとめて progress に加える。
-   子ディレクトリは `DispatchQueue.concurrentPerform` で並列に処理する。
-   `depth > 1` なら `scanDir(child, dev, depth - 1)` を、そうでなければ `walk(child)` を呼ぶ。
-   結果は添字ごとにロック付きの配列 `[SizeNode?]` に入れ、`nil`（`walk` が `fts_open` に失敗した場合）は捨てる。
-   自分のサイズは「ファイルの合計＋子ディレクトリのサイズの合計」とする。
-   `children` は「閾値以上のファイルのノード＋閾値以上のディレクトリのノード」をサイズの降順に並べたものにする。
-3. **`walk(path) -> SizeNode?`**：まず `progress.setPath(path)` を呼ぶ。
-   `fts_open` を `FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR` で開き、失敗したら `nil` を返す。
-   `fts_open` には NULL で終わる C 文字列の配列を渡す。
+   Add the file total to progress all at once when listing finishes.
+   Process child directories in parallel with `DispatchQueue.concurrentPerform`.
+   If `depth > 1`, call `scanDir(child, dev, depth - 1)`; otherwise, call `walk(child)`.
+   Store the results by index in a lock-protected `[SizeNode?]` array, and drop `nil` (returned when `walk` fails in `fts_open`).
+   The directory's own size is the file total plus the sum of the child directories' sizes.
+   `children` is the file nodes at or above the threshold plus the directory nodes at or above the threshold, sorted by size in descending order.
+3. **`walk(path) -> SizeNode?`**: first call `progress.setPath(path)`.
+   Open the tree with `fts_open` using `FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR`, and return `nil` if it fails.
+   Pass `fts_open` a NULL-terminated array of C strings.
 
    ```swift
    let cPath = strdup(path)
@@ -179,40 +179,40 @@ _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES,
    defer { fts_close(fts) }
    ```
 
-   `fts_info` は UInt16、`fts_level` は Int16 で取り込まれるので、`Int32(ent.pointee.fts_info)` を `FTS_*` 定数と比べ、`Int(ent.pointee.fts_level)` を level として使う。
-   ディレクトリごとに `Frame { level: Int, size: Int64 = 0, children: [SizeNode] = [] }` をスタックに積み、後行順で組み立てる。
-   `fts_read` が返す `fts_info` ごとの処理は次のとおり。
+   `fts_info` is imported as UInt16 and `fts_level` as Int16, so compare `Int32(ent.pointee.fts_info)` with the `FTS_*` constants and use `Int(ent.pointee.fts_level)` as the level.
+   Push a `Frame { level: Int, size: Int64 = 0, children: [SizeNode] = [] }` onto a stack for each directory and assemble the tree in post-order.
+   Handle each `fts_info` returned by `fts_read` as follows.
 
-   | `fts_info` | 処理 |
+   | `fts_info` | Action |
    | --- | --- |
-   | `FTS_D` | `fts_level` を持つ Frame を push する。`fts_statp` の `st_flags` に `SF_DATALESS` が立っていれば `fts_set(fts, ent, FTS_SKIP)` で中に入らない（直後に同じエントリの `FTS_DP` が来る） |
-   | `FTS_DP` | スタック先頭の level が `fts_level` と一致するときだけ pop する |
-   | `FTS_DNR`, `FTS_ERR` | 読めないディレクトリでは `FTS_D` の後、`FTS_DP` の代わりにこれが来る。スタック先頭の level が一致するときだけ、unreadable を 1 増やして pop する |
-   | `FTS_F`, `FTS_SL`, `FTS_SLNONE`, `FTS_DEFAULT` | スタックが空でなければ、サイズを数えて先頭 Frame の size に足す。閾値以上ならファイルノードを先頭 Frame の children に足す |
-   | それ以外（`FTS_NS`, `FTS_DC` など） | 数えない |
+   | `FTS_D` | Push a Frame with `fts_level`. If `SF_DATALESS` is set in the `st_flags` of `fts_statp`, call `fts_set(fts, ent, FTS_SKIP)` so the directory is not entered (an `FTS_DP` for the same entry follows immediately) |
+   | `FTS_DP` | Pop only when the level at the top of the stack equals `fts_level` |
+   | `FTS_DNR`, `FTS_ERR` | For an unreadable directory, one of these comes after `FTS_D` instead of `FTS_DP`. Only when the level at the top of the stack matches, increment unreadable by 1 and pop |
+   | `FTS_F`, `FTS_SL`, `FTS_SLNONE`, `FTS_DEFAULT` | If the stack is not empty, count the size and add it to the top Frame's size. If it is at or above the threshold, add a file node to the top Frame's children |
+   | Anything else (`FTS_NS`, `FTS_DC`, etc.) | Not counted |
 
-   pop では、先頭 Frame を取り出して次のように扱う。
-   - スタックが空になった（起点の）Frame は、閾値にかかわらずノードにして結果とする。
-   - 閾値以上の Frame はノードにし（children はサイズ降順）、親 Frame の size と children に足す。
-   - 閾値未満の Frame はノードにせず、size だけを親 Frame に足す。
+   On pop, take the top Frame and handle it as follows.
+   - The Frame whose removal leaves the stack empty (the starting point) becomes a node and the result, regardless of the threshold.
+   - A Frame at or above the threshold becomes a node (with children sorted by size in descending order) and is added to the parent Frame's size and children.
+   - A Frame below the threshold does not become a node; only its size is added to the parent Frame.
 
-   ノードの `name` は `fts_path` の最後の要素、`path` は `fts_path` にする。
-   progress へは 64,000,000 バイトたまるごとに加え、閾値以上の Frame を閉じたときと走査の終了時にも、たまった分を加える。
-   これにより、スキャン完了時に `progress.bytes` は起点のサイズと一致する。
+   A node's `name` is the last component of `fts_path`, and its `path` is `fts_path`.
+   Add to progress each time 64,000,000 bytes accumulate, and also flush the accumulated amount when closing a Frame at or above the threshold and at the end of the walk.
+   This makes `progress.bytes` equal to the starting point's size when the scan finishes.
 
-### 容量と内訳（Volume.swift）
+### Capacity and breakdown (Volume.swift)
 
-- **`VolumeStats`**：`Sendable, Equatable` の struct。
-  `total`、`available`、`system`（いずれも `Int64` の `var`）と、計算プロパティ `used: Int64 { max(0, total - available) }` を持つ。
-  イニシャライザは `public init(total:available:system:)`。
-- **`VolumeStats.current() -> VolumeStats?`**：ホームディレクトリの URL の `resourceValues` から `volumeTotalCapacity` と `volumeAvailableCapacityForImportantUsage` を取る。
-  後者が取れなければ `volumeAvailableCapacity` を使う。
-  `total` が取れなければ `nil` を返す。
-  `available` は Finder の「使用可能」と同じ基準で、パージ可能な領域を含む。
-- **`system`**：`/`、`/System/Volumes/VM`、`/System/Volumes/Preboot` の各ボリュームの使用量の合計である。
-  APFS では `statfs` の `f_blocks` と `f_bfree` がコンテナ全体の値になるので、`statfs` は使わない（使うとシステムが数 TB と表示される）。
-  `df` と同じく `getattrlist` の `ATTR_VOL_SPACEUSED` を使う。
-  返り値のバッファは、先頭 4 バイトが全体長で、その後に使用量の `off_t` が続く。
+- **`VolumeStats`**: a struct conforming to `Sendable, Equatable`.
+  It has `total`, `available`, and `system` (all `Int64` `var`s) and the computed property `used: Int64 { max(0, total - available) }`.
+  The initializer is `public init(total:available:system:)`.
+- **`VolumeStats.current() -> VolumeStats?`**: read `volumeTotalCapacity` and `volumeAvailableCapacityForImportantUsage` from the `resourceValues` of the home directory URL.
+  If the latter is unavailable, use `volumeAvailableCapacity`.
+  Return `nil` if `total` is unavailable.
+  `available` uses the same basis as Finder's "Available" and includes purgeable space.
+- **`system`**: the sum of the used space of the volumes `/`, `/System/Volumes/VM`, and `/System/Volumes/Preboot`.
+  On APFS, the `f_blocks` and `f_bfree` of `statfs` describe the whole container, so do not use `statfs` (System would show up as several TB).
+  Like `df`, use `ATTR_VOL_SPACEUSED` from `getattrlist`.
+  The returned buffer starts with a 4-byte total length, followed by the used space as an `off_t`.
 
 ```swift
 private static func usedBytes(of path: String) -> Int64 {
@@ -226,193 +226,193 @@ private static func usedBytes(of path: String) -> Int64 {
 }
 ```
 
-- **`Breakdown`**：`Sendable, Equatable` の struct で、`apps`、`home`、`system`、`other`、`free`（いずれも `Int64` の `var`）を持つ。
-  イニシャライザは `public init(apps:home:system:other:free:)`。
-  `static func make(volume: VolumeStats, home: Int64?, apps: Int64?) -> Breakdown` は、`nil` を 0 とみなし、`other = max(0, used - home - apps - system)`、`free = available` とする。
-  スキャン中や権限不足で合計が使用量を超えても、その他は 0 未満にならない。
-- **`public func formatBytes(_ bytes: Int64) -> String`**：`ByteCountFormatter.string(fromByteCount:countStyle: .file)`（10 進）。
+- **`Breakdown`**: a struct conforming to `Sendable, Equatable` with `apps`, `home`, `system`, `other`, and `free` (all `Int64` `var`s).
+  The initializer is `public init(apps:home:system:other:free:)`.
+  `static func make(volume: VolumeStats, home: Int64?, apps: Int64?) -> Breakdown` treats `nil` as 0 and sets `other = max(0, used - home - apps - system)` and `free = available`.
+  Even when the sum exceeds the used space (during a scan or because of missing permissions), Other never goes below 0.
+- **`public func formatBytes(_ bytes: Int64) -> String`**: `ByteCountFormatter.string(fromByteCount:countStyle: .file)` (decimal units).
 
-## Aki（アプリ）
+## Aki (the app)
 
-### エントリポイント（main.swift）
+### Entry point (main.swift)
 
-`AkiApp` には `@main` を付けない。
-`main.swift` があるターゲットで `@main` を付けるとコンパイルできない。
-`main.swift` は次の順に処理する。
+Do not mark `AkiApp` with `@main`.
+A target that has `main.swift` does not compile if `@main` is used.
+`main.swift` does the following, in order.
 
-1. `Scanner.disableDatalessMaterialization()` を呼ぶ。
-2. 引数に `--scan <path>` があれば、UI を出さずに `scanSync`（`~` を展開、threshold は既定の 50MB）を実行して次の形式で出力し、`exit(0)` する。
-   `--scan` の後に引数がなければ、このオプションは無視する（`--snapshot` も同様）。
-   所要時間は `Date` の差で測る。
-   1 行目は `total_kb=<size/1024>\t<formatBytes>\tunreadable=<数>\telapsed=<秒、小数 1 桁>s` で、続けて上位 10 件の子を `  <formatBytes>\t<name>` の形で 1 行ずつ出す。
-   `du -skx` との突き合わせに使う。
-3. 引数に `--snapshot <out.png> [ホームからの相対パス]` があれば、`renderSnapshot(to:drill:)` を呼んで `exit(0)` する。
-4. それ以外は `AkiApp.main()` を呼ぶ。
+1. Call `Scanner.disableDatalessMaterialization()`.
+2. If the arguments contain `--scan <path>`, run `scanSync` without the UI (expanding `~`, with the default 50MB threshold), print the result in the format below, and `exit(0)`.
+   If no argument follows `--scan`, ignore the option (the same applies to `--snapshot`).
+   Measure the elapsed time as a difference of `Date`s.
+   The first line is `total_kb=<size/1024>\t<formatBytes>\tunreadable=<count>\telapsed=<seconds, one decimal place>s`, followed by the top 10 children, one per line, as `  <formatBytes>\t<name>`.
+   This output is used for comparison with `du -skx`.
+3. If the arguments contain `--snapshot <out.png> [path relative to home]`, call `renderSnapshot(to:drill:)` and `exit(0)`.
+4. Otherwise, call `AkiApp.main()`.
 
-### メニューバー（App.swift）
+### Menu bar (App.swift)
 
-`struct AkiApp: App` が `@State private var model = AppModel()` を持つ。
-シーンは `MenuBarExtra { PopoverView(model: model) } label: { ... }` に `.menuBarExtraStyle(.window)` を付ける。
-ラベルは `HStack(spacing: 4)` で、SF Symbol と `Text(model.freeText)` を並べる。
-SF Symbol は通常 `internaldrive`、空きが 10% 未満なら `exclamationmark.triangle.fill` にする。
+`struct AkiApp: App` holds `@State private var model = AppModel()`.
+The scene is `MenuBarExtra { PopoverView(model: model) } label: { ... }` with `.menuBarExtraStyle(.window)`.
+The label is an `HStack(spacing: 4)` with an SF Symbol and `Text(model.freeText)`.
+The SF Symbol is normally `internaldrive`, and `exclamationmark.triangle.fill` when less than 10% is free.
 
-### 状態とスキャン（AppModel.swift）
+### State and scanning (AppModel.swift)
 
-`@MainActor @Observable final class AppModel` にする。
-ログは、ファイルの先頭に置いた `private let log = Logger(subsystem: "dev.aki.Aki", category: "app")` に出す。
+Make it `@MainActor @Observable final class AppModel`.
+Log to `private let log = Logger(subsystem: "dev.aki.Aki", category: "app")`, declared at the top of the file.
 
-- **読み取り専用の状態**（`private(set) var`）：`volume: VolumeStats?`、`home: ScanResult?`、`apps: ScanResult?`、`isScanning`、`progressBytes: Int64`、`progressPath: String`、`launchAtLogin`、`loginItemNeedsApproval`。
-- **計算プロパティ**：
-  - `breakdown`：`volume` があれば `Breakdown.make(volume:home: home?.root.size, apps: apps?.root.size)`。
-  - `freeText`：`formatBytes(volume.available)`、`volume` がなければ `"—"`。
-  - `isLow`：`Double(available) / Double(total) < 0.1`（total が 0 以下なら false）。Int64 のまま割ると 0 になるので Double で計算する。
-  - `unreadableCount`：home と apps の unreadableCount の和。
-- **`init(autoStart: Bool = true)`**：キャッシュを読み込み、`refreshVolume()` とログイン項目の状態の更新を行う。
-  `autoStart` が false ならここで終える（スナップショット用）。
-  true なら続けて次を行う。
-  1. 初回のインストール済み起動ならログイン項目に登録する（後述）。
-  2. 60 秒ごとに `refreshVolume()` を呼ぶ `Task` を起動する（`[weak self]`、`while !Task.isCancelled` のループ。Task はどこにも保持しない）。
-  3. `home` がない、または `home.scannedAt` が 1 時間（3600 秒）より古ければ `startScan()` を呼ぶ。
-- **`refreshVolume()`**：`volume = VolumeStats.current()`。
-- **`startScan()`**：実行中なら何もしない（二重起動しない）。
-  `isScanning = true` にし、progress の表示を 0 と空文字に戻し、`ScanProgress` を作って `Task` を起動する。
-  その中で、0.5 秒ごとに progress を読んで `progressBytes` と `progressPath` に写すポーリング用の `Task` を起動する。
-  `async let` でホーム（`NSHomeDirectory()`、progress あり）と `/Applications`（progress なし）を同時にスキャンし、両方を待つ。
-  終わったらポーリングを cancel し、`home` と `apps` を更新し、`isScanning = false` にして、`refreshVolume()` とキャッシュの保存を行う。
-- **ログイン項目**：`SMAppService.mainApp` を使う。
-  - `setLaunchAtLogin(_ on: Bool)`：`register()` か `unregister()` を呼び、失敗はログに出す。その後で状態を更新する。
-  - 状態の更新：`status == .enabled` を `launchAtLogin` に、`status == .requiresApproval` を `loginItemNeedsApproval` に入れる。
-  - 初回のインストール済み起動：`Bundle.main.bundlePath` が `/Applications/` か `NSHomeDirectory() + "/Applications/"` で始まり、UserDefaults の `loginItemConfigured` が false のときだけ `setLaunchAtLogin(true)` を呼び、`loginItemConfigured` を true にする。
-    `build/` から試しに起動した版は登録しない。
-    2 回目以降はチェックボックスの設定に従う。
-- **キャッシュ**：`struct Cache: Codable { var home: ScanResult?; var apps: ScanResult? }` を、ユーザーの Caches ディレクトリの `dev.aki.Aki/scan.json` に `JSONEncoder` の既定設定で保存する。
-  親ディレクトリを作ってから `.atomic` で書く。
-  読み込みと書き込みの失敗は、どちらも黙って無視する（`try?`）。
+- **Read-only state** (`private(set) var`): `volume: VolumeStats?`, `home: ScanResult?`, `apps: ScanResult?`, `isScanning`, `progressBytes: Int64`, `progressPath: String`, `launchAtLogin`, `loginItemNeedsApproval`.
+- **Computed properties**:
+  - `breakdown`: if `volume` exists, `Breakdown.make(volume:home: home?.root.size, apps: apps?.root.size)`.
+  - `freeText`: `formatBytes(volume.available)`, or `"—"` if there is no `volume`.
+  - `isLow`: `Double(available) / Double(total) < 0.1` (false if total is 0 or less). Dividing as Int64 yields 0, so compute in Double.
+  - `unreadableCount`: the sum of the unreadableCount of home and apps.
+- **`init(autoStart: Bool = true)`**: load the cache, call `refreshVolume()`, and update the login item state.
+  If `autoStart` is false, stop here (used for snapshots).
+  If it is true, continue as follows.
+  1. On the first launch of an installed copy, register the login item (see below).
+  2. Start a `Task` that calls `refreshVolume()` every 60 seconds (`[weak self]`, a `while !Task.isCancelled` loop; the Task is not stored anywhere).
+  3. If there is no `home`, or `home.scannedAt` is more than one hour (3600 seconds) old, call `startScan()`.
+- **`refreshVolume()`**: `volume = VolumeStats.current()`.
+- **`startScan()`**: do nothing if a scan is already running (no double start).
+  Set `isScanning = true`, reset the progress display to 0 and an empty string, create a `ScanProgress`, and start a `Task`.
+  Inside it, start a polling `Task` that reads the progress every 0.5 seconds and copies it to `progressBytes` and `progressPath`.
+  Scan the home directory (`NSHomeDirectory()`, with progress) and `/Applications` (without progress) concurrently with `async let`, and await both.
+  When both finish, cancel the poller, update `home` and `apps`, set `isScanning = false`, then call `refreshVolume()` and save the cache.
+- **Login item**: use `SMAppService.mainApp`.
+  - `setLaunchAtLogin(_ on: Bool)`: call `register()` or `unregister()` and log any failure. Then update the state.
+  - Updating the state: store `status == .enabled` in `launchAtLogin` and `status == .requiresApproval` in `loginItemNeedsApproval`.
+  - First launch of an installed copy: only when `Bundle.main.bundlePath` starts with `/Applications/` or `NSHomeDirectory() + "/Applications/"` and the UserDefaults key `loginItemConfigured` is false, call `setLaunchAtLogin(true)` and set `loginItemConfigured` to true.
+    A copy launched from `build/` for testing is not registered.
+    After the first launch, the checkbox setting decides.
+- **Cache**: save `struct Cache: Codable { var home: ScanResult?; var apps: ScanResult? }` to `dev.aki.Aki/scan.json` in the user's Caches directory, using `JSONEncoder` with its default settings.
+  Create the parent directory first, then write with `.atomic`.
+  Silently ignore both read and write failures (`try?`).
 
-### ポップオーバー（PopoverView.swift）
+### Popover (PopoverView.swift)
 
-`struct PopoverView: View` は `model: AppModel` と、ドリルダウンの経路 `@State private var stack: [SizeNode]` を持つ。
-イニシャライザは `init(model:initialStack: [SizeNode] = [])`。
-表示中のノード `current` は `stack.last ?? model.home?.root` である。
+`struct PopoverView: View` holds `model: AppModel` and the drill-down path `@State private var stack: [SizeNode]`.
+The initializer is `init(model:initialStack: [SizeNode] = [])`.
+The node being shown, `current`, is `stack.last ?? model.home?.root`.
 
-使う定数は次のとおり。
+The constants are:
 
-- 1 階層に表示する行数の上限：20
-- 行の高さ：30pt
-- サイズ列の幅：80pt
-- リストの最大の高さ：330pt
-- フルディスクアクセスの設定画面の URL：`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`
+- Maximum number of rows shown per level: 20
+- Row height: 30pt
+- Size column width: 80pt
+- Maximum list height: 330pt
+- URL of the Full Disk Access settings pane: `x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`
 
-全体は `VStack(alignment: .leading, spacing: 12)` で、上から「容量と内訳」、`Divider()`、「大きいフォルダ」、`Divider()`、「フッター」を並べる。
-`.padding(14)` と `.frame(width: 380)` を付ける。
-`onAppear` で `model.refreshVolume()` を呼ぶ。
-`onChange(of: model.home?.scannedAt) { stack = [] }`（引数なしのクロージャの形。引数 1 つの形は macOS 14 で非推奨）で `stack` を空に戻す。
+The whole view is a `VStack(alignment: .leading, spacing: 12)` containing, from top to bottom, the capacity and breakdown section, `Divider()`, the large folders section, `Divider()`, and the footer.
+Apply `.padding(14)` and `.frame(width: 380)`.
+Call `model.refreshVolume()` in `onAppear`.
+Reset `stack` to empty with `onChange(of: model.home?.scannedAt) { stack = [] }` (the zero-parameter closure form; the one-parameter form is deprecated in macOS 14).
 
-#### 容量と内訳
+#### Capacity and breakdown
 
-`volume` と `breakdown` があるときは、`VStack(alignment: .leading, spacing: 8)` で次を並べる。
-ないときは `Text("容量を取得できませんでした")`（secondary）だけを出す。
+When `volume` and `breakdown` exist, lay out the following in a `VStack(alignment: .leading, spacing: 8)`.
+Otherwise, show only `Text("容量を取得できませんでした")` (Could not get the capacity; secondary).
 
-1. `HStack(alignment: .firstTextBaseline)`：
-   左に `"空き \(formatBytes(available))"` を `.title2.bold()` で出す（`isLow` なら赤、それ以外は primary）。
-   `Spacer()` を挟み、右に `"\(formatBytes(total)) 中 \(使用率)% 使用"` を `.caption` の secondary で出す。
-   使用率は `Int((Double(used) / Double(max(total, 1)) * 100).rounded())`。Int64 のまま割ると常に 0% になるので、必ず Double で計算する。
-2. 使用率バー（高さ 10）。
-3. 凡例：`LazyVGrid`（`GridItem(.flexible(), spacing: 16)` と `GridItem(.flexible())` の 2 列、leading 揃え、行間 4）。
-   各項目は `HStack(spacing: 6)` に、8pt の円、ラベル、`Spacer()`、値（`monospacedDigit`、secondary）を並べ、`.font(.callout)` にする。
-   値が `nil` なら `"…"` を出す。
+1. `HStack(alignment: .firstTextBaseline)`:
+   On the left, `"空き \(formatBytes(available))"` (Free …) in `.title2.bold()` (red if `isLow`, otherwise primary).
+   Then a `Spacer()`, and on the right, `"\(formatBytes(total)) 中 \(percent)% 使用"` (percent used of total) in `.caption`, secondary.
+   `percent` is `Int((Double(used) / Double(max(total, 1)) * 100).rounded())`. Dividing as Int64 always gives 0%, so always compute in Double.
+2. The usage bar (height 10).
+3. The legend: a `LazyVGrid` (two columns, `GridItem(.flexible(), spacing: 16)` and `GridItem(.flexible())`, leading alignment, row spacing 4).
+   Each item is an `HStack(spacing: 6)` with an 8pt circle, the label, a `Spacer()`, and the value (`monospacedDigit`, secondary), in `.font(.callout)`.
+   If the value is `nil`, show `"…"`.
 
-内訳の項目は次の順に並べる。
-アプリ、ホーム、その他の値は、ホームのスキャン結果がまだないとき `nil` にする。
+The breakdown items, in this order, are below.
+The values of アプリ, ホーム, and その他 are `nil` while there is no home scan result yet.
 
-| ラベル | 値 | 色 |
-| --- | --- | --- |
-| アプリ | `apps` | `.blue` |
-| ホーム | `home` | `.orange` |
-| システム | `system` | `.gray` |
-| その他 | `other` | `.purple` |
-| 空き | `free` | `Color.primary.opacity(0.12)` |
+| Label | Meaning | Value | Color |
+| --- | --- | --- | --- |
+| アプリ | Apps | `apps` | `.blue` |
+| ホーム | Home | `home` | `.orange` |
+| システム | System | `system` | `.gray` |
+| その他 | Other | `other` | `.purple` |
+| 空き | Free | `free` | `Color.primary.opacity(0.12)` |
 
-使用率バーは `parts: [(Double, Color)]`（各項目の値を Double にしたものと色。`nil` は 0）を受け取る。
-`GeometryReader` の中の `HStack(spacing: 1)` に、各項目の色の `Rectangle` を幅 `max(0, geo.size.width * 値 / 合計 - 1)` で並べ、全体を `Capsule` で切り抜く。
-合計は値の和で、最小 1 とする。
+The usage bar takes `parts: [(Double, Color)]` (each item's value as a Double and its color; `nil` counts as 0).
+Inside a `GeometryReader`, place a `Rectangle` in each item's color in an `HStack(spacing: 1)`, with width `max(0, geo.size.width * value / sum - 1)`, and clip the whole bar with a `Capsule`.
+`sum` is the sum of the values, with a minimum of 1.
 
-#### 大きいフォルダ
+#### Large folders
 
-`VStack(alignment: .leading, spacing: 6)` にする。
+Use a `VStack(alignment: .leading, spacing: 6)`.
 
-見出しの行は `HStack(spacing: 6)` で、次を並べる。
-- `stack` が空でなければ、`chevron.left` の戻るボタン（`.borderless`、help は「戻る」）。押すと `stack` の末尾を取り除く。
-- 見出しの文字列（`.headline`、1 行、先頭を省略）：`stack` が空なら「ホームの大きいフォルダ」、そうでなければ `current.path` を `~` 表記にしたもの。
-- `Spacer()`。
-- `current` があれば、`folder` アイコンのボタン（`.borderless`、help は「Finderで表示」）。押すと `current` を Finder で表示する。
+The header row is an `HStack(spacing: 6)` containing:
+- If `stack` is not empty, a `chevron.left` back button (`.borderless`, help `戻る` (Back)). Pressing it removes the last element of `stack`.
+- The heading text (`.headline`, one line, truncated at the head): `ホームの大きいフォルダ` (Large folders in Home) if `stack` is empty, otherwise `current.path` in `~` notation.
+- `Spacer()`.
+- If `current` exists, a `folder` icon button (`.borderless`, help `Finderで表示` (Show in Finder)). Pressing it reveals `current` in Finder.
 
-`current` があれば、`children` の先頭 20 件を `NodeRow` で並べる。
-`current.size` から表示した 20 件のサイズの和を引いた残りが正なら、末尾に `RestRow` を足す。
-行は `ScrollView` の中の `VStack(spacing: 0)` に入れ、`ScrollView` の高さは `min(max(行数, 1) * 30, 330)` にする。
-`current` がなく、スキャン中なら「初回スキャン中です。数分かかることがあります。」を、スキャン中でなければ「まだスキャンしていません」を、`.callout` の secondary で出す。
+If `current` exists, list the first 20 of its `children` as `NodeRow`s.
+If `current.size` minus the sum of the sizes of the 20 rows shown is positive, append a `RestRow`.
+Put the rows in a `VStack(spacing: 0)` inside a `ScrollView`, and set the `ScrollView`'s height to `min(max(row count, 1) * 30, 330)`.
+If there is no `current`, show `初回スキャン中です。数分かかることがあります。` (Running the first scan. It can take a few minutes.) while scanning, or `まだスキャンしていません` (Not scanned yet) otherwise, in `.callout`, secondary.
 
-**`NodeRow`**（`node`、`parentSize`、`onOpen` を受け取る）は `HStack(spacing: 8)` に次を並べる。
-- アイコン（幅 16）：フォルダなら `folder.fill`、ファイルなら `doc.fill`。色は `node.isDirectory ? Color.accentColor : Color.secondary`。
-- `VStack(alignment: .leading, spacing: 3)` に名前（1 行、中央を省略）と割合バー（高さ 3、`size / max(parentSize, 1)`）。`.frame(maxWidth: .infinity, alignment: .leading)` を付ける。
-- サイズ（`monospacedDigit`、secondary、幅 80、右揃え）。
-- `chevron.right`（`.caption`、tertiary）。開けない行では opacity 0 にして幅だけ残す。
+**`NodeRow`** (takes `node`, `parentSize`, and `onOpen`) is an `HStack(spacing: 8)` containing:
+- The icon (width 16): `folder.fill` for a folder, `doc.fill` for a file. The color is `node.isDirectory ? Color.accentColor : Color.secondary`.
+- A `VStack(alignment: .leading, spacing: 3)` with the name (one line, truncated in the middle) and a proportion bar (height 3, `size / max(parentSize, 1)`), with `.frame(maxWidth: .infinity, alignment: .leading)`.
+- The size (`monospacedDigit`, secondary, width 80, right-aligned).
+- `chevron.right` (`.caption`, tertiary). On rows that cannot be opened, set its opacity to 0 so that only its width remains.
 
-行は横の padding 6、高さ 30 にする。
-ホバー中は角丸 6 の `Color.primary.opacity(0.08)` を背景に敷き、`contentShape(Rectangle())` で行全体をクリック可能にする。
-開ける行（フォルダで、`children` が空でないもの）はクリックで `onOpen`（`stack` に push）を呼び、それ以外はクリックで Finder に表示する。
-help は、開ける行なら「クリックで中を表示」、それ以外は「クリックで Finder に表示」。
-右クリックメニューには「Finderで表示」と「パスをコピー」を置く。
-「パスをコピー」は `NSPasteboard.general` を `clearContents()` してから `setString(path, forType: .string)` する。
+Rows have a horizontal padding of 6 and a height of 30.
+While a row is hovered, draw `Color.primary.opacity(0.08)` with a corner radius of 6 as its background, and make the whole row clickable with `contentShape(Rectangle())`.
+Clicking an openable row (a folder whose `children` is not empty) calls `onOpen` (which pushes it onto `stack`); clicking any other row reveals it in Finder.
+The help text is `クリックで中を表示` (Click to show contents) for openable rows and `クリックで Finder に表示` (Click to show in Finder) for the others.
+The context menu has `Finderで表示` (Show in Finder) and `パスをコピー` (Copy path).
+`パスをコピー` calls `clearContents()` on `NSPasteboard.general` and then `setString(path, forType: .string)`.
 
-**`RestRow`**（`size` と `parentSize` を受け取る）は `NodeRow` と同じレイアウトで、アイコンは `ellipsis.circle`（secondary）、名前は「その他（小さい項目）」（secondary）にする。
-シェブロンは opacity 0 で置く。
-ホバー表示とクリック動作は持たない。
+**`RestRow`** (takes `size` and `parentSize`) has the same layout as `NodeRow`, with the icon `ellipsis.circle` (secondary) and the name `その他（小さい項目）` (Other (small items); secondary).
+Place the chevron with opacity 0.
+It has no hover highlight and no click action.
 
-割合バーは `fraction: Double` を受け取り、`GeometryReader` の中の `ZStack(alignment: .leading)` に、背景の `Capsule`（`Color.primary.opacity(0.08)`）と、幅 `全幅 * 割合（0〜1 に丸める）` の `Capsule`（`Color.accentColor.opacity(0.7)`）を重ねる。
+The proportion bar takes `fraction: Double` and, inside a `GeometryReader`, layers in a `ZStack(alignment: .leading)` a background `Capsule` (`Color.primary.opacity(0.08)`) and a `Capsule` (`Color.accentColor.opacity(0.7)`) whose width is the full width times the fraction (clamped to 0...1).
 
-パスの表示では、ホームディレクトリで始まるパスの先頭を `~` に置き換える。
-Finder での表示には `NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])` を使う。
+When displaying a path, replace a leading home directory with `~`.
+To reveal an item in Finder, use `NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])`.
 
-#### フッター
+#### Footer
 
-`VStack(alignment: .leading, spacing: 8)` に、上から次を並べる。
+A `VStack(alignment: .leading, spacing: 8)` containing, from top to bottom:
 
-1. スキャン中なら、`HStack(spacing: 6)` に `ProgressView().controlSize(.small)` と `"スキャン中… \(formatBytes(progressBytes))"`（`monospacedDigit`）を並べて `.caption` にする。
-   その下に `progressPath` を `~` 表記で出す（`.caption2`、secondary、1 行、中央を省略）。
-   スキャン中でなく `home` があれば、`"最終スキャン: \(scannedAt.formatted(date: .abbreviated, time: .shortened))"`（`.caption`、secondary）を出す。
-2. `unreadableCount > 0` なら、`HStack(spacing: 6)` に `lock.fill`（secondary）、`"読めないフォルダ \(数) 件（その分小さく表示）"`、`Spacer()`、リンク形式のボタン「フルディスクアクセス…」を並べて `.caption` にする。
-   ボタンは上記の URL を `NSWorkspace.shared.open` で開く。
-3. `loginItemNeedsApproval` なら、`HStack(spacing: 6)` に `exclamationmark.circle`（orange）、「ログイン時の起動にはシステム設定での許可が必要です」、`Spacer()`、リンク形式のボタン「開く」を並べて `.caption` にする。
-   ボタンは `SMAppService.openSystemSettingsLoginItems()` を呼ぶ。
-4. 最下段の `HStack`：
-   - 「再スキャン」ボタン（スキャン中は無効）。
-   - `.checkbox` スタイルの Toggle「ログイン時に起動」（`.caption`）。get は `launchAtLogin`、set は `setLaunchAtLogin(_:)`。
-   - `Spacer()`。
-   - 「終了」ボタン（`NSApp.terminate(nil)`）。
+1. While scanning, an `HStack(spacing: 6)` with `ProgressView().controlSize(.small)` and `"スキャン中… \(formatBytes(progressBytes))"` (Scanning…; `monospacedDigit`), in `.caption`.
+   Below it, `progressPath` in `~` notation (`.caption2`, secondary, one line, truncated in the middle).
+   When not scanning and `home` exists, show `"最終スキャン: \(scannedAt.formatted(date: .abbreviated, time: .shortened))"` (Last scan; `.caption`, secondary).
+2. If `unreadableCount > 0`, an `HStack(spacing: 6)` with `lock.fill` (secondary), `"読めないフォルダ \(count) 件（その分小さく表示）"` (N unreadable folders; sizes are shown smaller by that amount), `Spacer()`, and a link-style button `フルディスクアクセス…` (Full Disk Access…), in `.caption`.
+   The button opens the URL above with `NSWorkspace.shared.open`.
+3. If `loginItemNeedsApproval`, an `HStack(spacing: 6)` with `exclamationmark.circle` (orange), `ログイン時の起動にはシステム設定での許可が必要です` (Launch at login needs approval in System Settings), `Spacer()`, and a link-style button `開く` (Open), in `.caption`.
+   The button calls `SMAppService.openSystemSettingsLoginItems()`.
+4. The bottom `HStack`:
+   - A `再スキャン` (Rescan) button (disabled while scanning).
+   - A `.checkbox`-style Toggle `ログイン時に起動` (Launch at login; `.caption`). Its getter is `launchAtLogin` and its setter is `setLaunchAtLogin(_:)`.
+   - `Spacer()`.
+   - A `終了` (Quit) button (`NSApp.terminate(nil)`).
 
-### 開発用のスナップショット（Snapshot.swift）
+### Development snapshot (Snapshot.swift)
 
-`@MainActor func renderSnapshot(to path: String, drill: String? = nil)` は、キャッシュ済みの結果でポップオーバーを描画し、PNG に書き出す。
-メニューバーをスクリーンショットで確認できない環境での見た目の確認に使う。
+`@MainActor func renderSnapshot(to path: String, drill: String? = nil)` renders the popover from the cached results and writes it to a PNG.
+It is for checking the look in environments where the menu bar cannot be captured in a screenshot.
 
-1. `_ = NSApplication.shared` で初期化し、`NSApp.setActivationPolicy(.prohibited)` にする。
-2. `AppModel(autoStart: false)` を作る。
-3. `drill`（例：`Library/Developer`）があれば、`home.root` から `/` で区切った名前を順に `children` から探して `stack` を作る。見つからなければそこで止める。
-4. `PopoverView(model:initialStack:).background(.background)` を `NSHostingView` に入れ、`fittingSize` の大きさにして、borderless の `NSWindow` の `contentView` にする。
-5. `layoutSubtreeIfNeeded()` の後、RunLoop を 0.5 秒回す。
-6. `bitmapImageRepForCachingDisplay(in:)` と `cacheDisplay(in:to:)` で描画し、PNG で書き出す。
+1. Initialize with `_ = NSApplication.shared` and call `NSApp.setActivationPolicy(.prohibited)`.
+2. Create `AppModel(autoStart: false)`.
+3. If `drill` is given (for example `Library/Developer`), split it on `/` and build `stack` by looking up each name in turn among the `children`, starting from `home.root`. Stop at the first name that is not found.
+4. Put `PopoverView(model:initialStack:).background(.background)` in an `NSHostingView`, size it to its `fittingSize`, and set it as the `contentView` of a borderless `NSWindow`.
+5. After `layoutSubtreeIfNeeded()`, run the RunLoop for 0.5 seconds.
+6. Render with `bitmapImageRepForCachingDisplay(in:)` and `cacheDisplay(in:to:)`, and write the result as a PNG.
 
-## ビルドとパッケージング
+## Build and packaging
 
-`scripts/build-app.sh`（bash、`set -euo pipefail`、リポジトリのルートに `cd`）は次を行う。
+`scripts/build-app.sh` (bash, `set -euo pipefail`, `cd` to the repository root) does the following.
 
-1. `swift build -c release` を実行し、`swift build -c release --show-bin-path` で得たディレクトリの `Aki` を取る。
-2. `build/Aki.app` を消して作り直し、`Contents/MacOS/Aki` に実行ファイルを、`Contents/Info.plist` に下の内容を置く。`Contents/Resources` も作る。
-3. `codesign --force --sign - build/Aki.app` で ad-hoc 署名する。
-   リンカがすでに ad-hoc 署名しているので、`replacing existing signature` と出るのは正常である。
+1. Run `swift build -c release` and take `Aki` from the directory printed by `swift build -c release --show-bin-path`.
+2. Delete and recreate `build/Aki.app`, put the executable at `Contents/MacOS/Aki` and the content below at `Contents/Info.plist`, and also create `Contents/Resources`.
+3. Ad-hoc sign the bundle with `codesign --force --sign - build/Aki.app`.
+   The linker has already ad-hoc signed the binary, so `replacing existing signature` in the output is expected.
 
-スクリプトには実行権限を付ける（`chmod +x scripts/build-app.sh`）。
+Make the script executable (`chmod +x scripts/build-app.sh`).
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -433,78 +433,78 @@ Finder での表示には `NSWorkspace.shared.activateFileViewerSelecting([URL(f
 </plist>
 ```
 
-`LSUIElement` を true にして、Dock にアイコンを出さない。
+`LSUIElement` is true so that no icon appears in the Dock.
 
-`Makefile` のターゲットは次のとおり。
+The `Makefile` targets are:
 
-- **`app`**：`./scripts/build-app.sh`
-- **`test`**：`swift test`
-- **`run`**：`app` の後に `open build/Aki.app`
-- **`install`**：`app` の後に `~/Applications` を作り、既存の `~/Applications/Aki.app` を消してから `cp -R build/Aki.app ~/Applications/`（sudo は不要）
-- **`clean`**：`rm -rf .build build`
+- **`app`**: `./scripts/build-app.sh`
+- **`test`**: `swift test`
+- **`run`**: `app`, then `open build/Aki.app`
+- **`install`**: `app`, then create `~/Applications`, delete any existing `~/Applications/Aki.app`, and run `cp -R build/Aki.app ~/Applications/` (no sudo needed)
+- **`clean`**: `rm -rf .build build`
 
-## テスト
+## Tests
 
-Swift Testing（`import Testing`、`@testable import AkiCore`）で書く。
-テストは `FileManager.default.temporaryDirectory` の下に `aki-test-<UUID>` のディレクトリを作り、そこだけを触る。
-ファイルは `0xAB` で埋めて書く（ゼロ埋めだと疎ファイルとして扱われ、ブロック数が期待とずれうる）。
-後片付けでは、`chmod 000` にしたディレクトリの権限を `0o755` に戻してから削除する。
-以下、MB は 1,000,000 バイトとする。
-threshold を書いていないテストは、すべて `threshold: 0` でスキャンする（既定の 50MB では子ノードが残らない）。
+Write the tests with Swift Testing (`import Testing`, `@testable import AkiCore`).
+Each test creates an `aki-test-<UUID>` directory under `FileManager.default.temporaryDirectory` and touches only that directory.
+Fill files with `0xAB` when writing them (zero-filled files may be treated as sparse, so their block counts can differ from what the test expects).
+During cleanup, restore the permissions of directories set to `chmod 000` to `0o755` before deleting them.
+Below, MB means 1,000,000 bytes.
+Every test that does not state a threshold scans with `threshold: 0` (with the default of 50MB, no child nodes remain).
 
-ScannerTests.swift：
+ScannerTests.swift:
 
-- **`sumsFileSizes`**：`a/f1`、`b/f2`、`top.txt`（各 1MB）を threshold 0 でスキャンする。合計が 3MB 以上 3.5MB 未満、子の名前が {a, b, top.txt}、`a` はディレクトリ、`top.txt` はファイル、`a` は 1MB 以上、unreadable は 0。
-- **`childrenSortedDescending`**：`small/f`（1MB）、`big/f`（3MB）、`mid/f`（2MB）で、子の並びが big、mid、small。
-- **`prunesBelowThresholdButKeepsSize`**：`a/f1`（1MB）と `big/deep/f`（12MB）を threshold 10MB でスキャンする。子は big だけで、合計は 13MB 以上。`big/deep` が残り、`big/deep/f` がファイルノードとして正しい絶対パスで残る。
-- **`dedupesHardLinks`**：`a/f`（1MB）と、そのハードリンク `b/g` で、合計が 1MB 以上 1.5MB 未満。
-- **`unreadableDirectoriesAreCountedAndTreeStaysIntact`**：`ok/f`、`locked/f`、`deep/inner/x`（2MB）、`deep/inner/locked/f`、`deep/after/y`（指定のないものは 1MB）を作り、`locked` と `deep/inner/locked` を `chmod 000` にする。unreadable は 2、`ok` は 1MB 以上、`deep` は 3MB 以上 3.5MB 未満、`deep` の子は {inner, after}、`inner` は 2MB 以上、合計は 4.5MB 未満。
-- **`unreadableRootDoesNotCrash`**：`x/f`（1MB）を作って `x` を `chmod 000` にし、`x` を起点にスキャンすると、unreadable が 1、合計が 0。
-- **`progressReachesTotal`**：`a/f`（1MB）と `b/c/g`（2MB）を progress 付きでスキャンし、`progress.bytes == root.size`。
+- **`sumsFileSizes`**: scan `a/f1`, `b/f2`, and `top.txt` (1MB each) with threshold 0. The total is at least 3MB and less than 3.5MB, the children's names are {a, b, top.txt}, `a` is a directory, `top.txt` is a file, `a` is at least 1MB, and unreadable is 0.
+- **`childrenSortedDescending`**: with `small/f` (1MB), `big/f` (3MB), and `mid/f` (2MB), the children are ordered big, mid, small.
+- **`prunesBelowThresholdButKeepsSize`**: scan `a/f1` (1MB) and `big/deep/f` (12MB) with threshold 10MB. The only child is big, and the total is at least 13MB. `big/deep` remains, and `big/deep/f` remains as a file node with the correct absolute path.
+- **`dedupesHardLinks`**: with `a/f` (1MB) and its hard link `b/g`, the total is at least 1MB and less than 1.5MB.
+- **`unreadableDirectoriesAreCountedAndTreeStaysIntact`**: create `ok/f`, `locked/f`, `deep/inner/x` (2MB), `deep/inner/locked/f`, and `deep/after/y` (1MB unless stated otherwise), and `chmod 000` both `locked` and `deep/inner/locked`. unreadable is 2, `ok` is at least 1MB, `deep` is at least 3MB and less than 3.5MB, the children of `deep` are {inner, after}, `inner` is at least 2MB, and the total is less than 4.5MB.
+- **`unreadableRootDoesNotCrash`**: create `x/f` (1MB), `chmod 000` `x`, and scan with `x` as the starting point. unreadable is 1 and the total is 0.
+- **`progressReachesTotal`**: scan `a/f` (1MB) and `b/c/g` (2MB) with progress. `progress.bytes == root.size`.
 
-BreakdownTests.swift：
+BreakdownTests.swift:
 
-- **`otherIsRemainder`**：total 1000、available 100、system 50、home 500、apps 100 で、`Breakdown(apps: 100, home: 500, system: 50, other: 250, free: 100)` と等しい。
-- **`otherIsClampedToZero`**：total 1000、available 400、system 50、home 700、apps 100 で、other が 0、free が 400。
-- **`currentVolumeSystemIsPlausible`**：実機の `VolumeStats.current()` で、total > 0、0 < available ≦ total、system > 0、system < used / 2。コンテナ全体の値を拾っていないことの確認で、実際のディスクを読む。
-- **`missingScanCountsAsZero`**：total 1000、available 100、system 50、home と apps が nil で、home と apps が 0、other が 850。
+- **`otherIsRemainder`**: with total 1000, available 100, system 50, home 500, and apps 100, the result equals `Breakdown(apps: 100, home: 500, system: 50, other: 250, free: 100)`.
+- **`otherIsClampedToZero`**: with total 1000, available 400, system 50, home 700, and apps 100, other is 0 and free is 400.
+- **`currentVolumeSystemIsPlausible`**: on the real machine, `VolumeStats.current()` gives total > 0, 0 < available ≤ total, system > 0, and system < used / 2. This checks that container-wide values are not being picked up, and it reads the actual disk.
+- **`missingScanCountsAsZero`**: with total 1000, available 100, system 50, and home and apps nil, home and apps are 0 and other is 850.
 
-これらのテストは木が浅いため、`splitDepth` より上の並列の列挙だけを通り、`fts` の経路（特に `FTS_DNR` と `FTS_ERR` の処理）は通らない。
-`fts` の経路は、次の節の `du` との突き合わせで確認する。
+Because these test trees are shallow, they exercise only the parallel enumeration above `splitDepth` and not the `fts` path (in particular, not the handling of `FTS_DNR` and `FTS_ERR`).
+The `fts` path is checked by the comparison with `du` in the next section.
 
-## 動作確認
+## Verification
 
-1. `swift test` がすべて通る（11 件）。
-2. `make app` が警告なく通り、`build/Aki.app` ができる。
-3. `build/Aki.app/Contents/MacOS/Aki --scan <dir>` の `total_kb` と `du -skx <dir>` の値が一致する。
-   起点から 4 階層下のディレクトリ（`<dir>/a/b/c/d`）から先は `fts` でたどるので、それより深い位置にファイルと `chmod 000` のディレクトリを置いた木を一時ディレクトリに作って確かめる。
-   ハードリンクを 1 つ入れ、unreadable が `chmod 000` にしたディレクトリの数と一致することも確かめる。
-   ホーム全体ではなく、権限ダイアログの出ないフォルダ（一時ディレクトリや `~/Library/Caches` など）で確かめる。
-   参考までに、作者の環境では `~/go` の集計が約 10〜13 秒（`du` は約 31 秒）、ホーム全体のスキャンが約 4 分だった。
-4. アプリを一度起動してキャッシュができていれば、`Aki --snapshot out.png` や `Aki --snapshot out.png Library` でポップオーバーの見た目を PNG で確かめられる。
-   起動はユーザーの了承を得てから行う。
+1. `swift test` passes in full (11 tests).
+2. `make app` succeeds with no warnings and produces `build/Aki.app`.
+3. The `total_kb` printed by `build/Aki.app/Contents/MacOS/Aki --scan <dir>` matches `du -skx <dir>`.
+   Directories 4 levels below the starting point (`<dir>/a/b/c/d`) and deeper are walked with `fts`, so check with a tree in a temporary directory that has files and a `chmod 000` directory below that depth.
+   Include one hard link, and also check that unreadable equals the number of directories set to `chmod 000`.
+   Check with a folder that does not trigger permission dialogs (a temporary directory, `~/Library/Caches`, and so on), not with the whole home directory.
+   For reference, in the author's environment, scanning `~/go` took about 10–13 seconds (`du` took about 31 seconds), and scanning the whole home directory took about 4 minutes.
+4. Once the app has been launched and a cache exists, `Aki --snapshot out.png` or `Aki --snapshot out.png Library` renders the popover to a PNG for checking its look.
+   Launch the app only with the user's consent.
 
-## 権限と ad-hoc 署名
+## Permissions and ad-hoc signing
 
-- 初回のスキャンでは、デスクトップ、書類、ダウンロードや「他のアプリのデータ」へのアクセス許可を求めるダイアログが出る。
-- `~/Library/Mail` や `~/Library/Containers` の一部はフルディスクアクセスがないと読めない。読めない分はサイズが小さく表示され、フッターに件数が出る。フルディスクアクセスはユーザーが自分で許可する。
-- ad-hoc 署名では再ビルドのたびにアプリの識別情報（cdhash）が変わるので、許可をやり直す必要がある。
+- The first scan shows dialogs asking for access to Desktop, Documents, Downloads, and data from other apps.
+- Parts of `~/Library/Mail` and `~/Library/Containers` cannot be read without Full Disk Access. Sizes appear smaller by the unreadable amount, and the footer shows the count. The user grants Full Disk Access themselves.
+- With ad-hoc signing, the app's identity (cdhash) changes on every rebuild, so the permissions have to be granted again.
 
-## 現状の挙動として残している制限
+## Limitations kept as current behavior
 
-次の点は意図的に直していない。
-再現するときも、この挙動のまま実装する。
+The following are intentionally left unfixed.
+Reproduce them as they are.
 
-- **ディレクトリ自体のブロックは数えない**：`du` はディレクトリの `st_blocks` も数えるが、Aki はディレクトリ以外だけを数える。
-  APFS ではディレクトリのブロック数が 0 なので一致するが、HFS+ や SMB などでは合計がずれうる。
-- **`total_kb` は切り捨て**：`size / 1024` で切り捨てるが、`du -k` は 512 バイト単位のブロックを切り上げる。
-  APFS は 4 KiB 単位で割り当てるので一致する。
-- **`walk` の中のマウントポイント**：`FTS_XDEV` で中には入らないが、`FTS_D` と `FTS_DP` は来るので、threshold 0 ではサイズ 0 のノードになる。
-  `scanDir` の階層ではマウントポイントを捨てるので扱いが揃っていないが、既定の閾値ではノードに残らない。
-- **ハードリンクの重複排除はスキャンごと**：ホームと `/Applications` は別々にスキャンするので、両方にまたがるハードリンクは内訳で二重に数えられる。
+- **The blocks of directories themselves are not counted**: `du` also counts a directory's `st_blocks`, but Aki counts only non-directories.
+  On APFS, directories have 0 blocks, so the totals match, but on HFS+, SMB, and other file systems the totals can differ.
+- **`total_kb` is truncated**: it is floored with `size / 1024`, whereas `du -k` rounds 512-byte blocks up.
+  APFS allocates in 4 KiB units, so the two match.
+- **Mount points inside `walk`**: `FTS_XDEV` keeps the walk from entering them, but `FTS_D` and `FTS_DP` still arrive, so with threshold 0 they become nodes of size 0.
+  At the `scanDir` levels, mount points are discarded, so the handling is inconsistent, but with the default threshold they do not remain as nodes.
+- **Hard-link deduplication is per scan**: the home directory and `/Applications` are scanned separately, so hard links spanning both are counted twice in the breakdown.
 
-## 実装時の注意
+## Implementation notes
 
-- Swift 6 の厳格な並行性チェックで、`concurrentPerform` のクロージャが `var` をキャプチャすると警告になる。子ディレクトリの一覧は `let` に写してから渡す。
-- `AppModel` のポーリング用の `Task` で `[weak self]` を使うと、外側の `Task` のキャプチャと食い違って警告になる。ポーリングの `Task` では `self` をそのまま使う（スキャン終了時に cancel する）。
-- `os_log` を見るときは `/usr/bin/log` をフルパスで呼ぶ。zsh では組み込みの `log` コマンドが優先される。
+- Under Swift 6's strict concurrency checking, capturing a `var` in the `concurrentPerform` closure triggers a warning. Copy the list of child directories into a `let` before passing it.
+- Using `[weak self]` in `AppModel`'s polling `Task` conflicts with the outer `Task`'s capture and triggers a warning. Use `self` directly in the polling `Task` (it is cancelled when the scan finishes).
+- To view `os_log` output, call `/usr/bin/log` by its full path. In zsh, the built-in `log` command takes precedence.
